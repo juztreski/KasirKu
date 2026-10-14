@@ -5,6 +5,7 @@ export interface CartItem {
   barcode_barang?: string | null;
   harga_modal: number;
   harga_jual: number;
+  harga_jual_awal: number;
   jumlah_barang: number;
   stok_barang: number;
 }
@@ -61,12 +62,28 @@ class CartStore {
         barcode_barang: product.barcode_barang,
         harga_modal: product.harga_modal,
         harga_jual: product.harga_jual,
+        harga_jual_awal: product.harga_jual,
         jumlah_barang: qty,
         stok_barang: product.stok_barang,
       });
 
       return { success: true };
     }
+  }
+
+  updateHargaJual(id: number, harga: number): { success: boolean; message?: string } {
+    const item = this.items.find((i) => i.id === id);
+    if (!item) return { success: false, message: 'Barang tidak ada di keranjang' };
+
+    const normalized = Math.max(0, Math.round(Number(harga) || 0));
+    item.harga_jual = normalized;
+    return { success: true };
+  }
+
+  resetHargaJual(id: number) {
+    const item = this.items.find((i) => i.id === id);
+    if (!item) return;
+    item.harga_jual = item.harga_jual_awal;
   }
 
   updateQuantity(id: number, qty: number): { success: boolean; message?: string } {

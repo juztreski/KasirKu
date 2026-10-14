@@ -10,7 +10,7 @@
   import { toast } from '../stores/toast.svelte';
   import { dialog } from '../stores/dialog.svelte';
   import { api } from '../api/api';
-  import { formatRupiah, formatNumber } from '../utils/format';
+  import { formatRupiah, formatNumber, formatIDR, parseIDR } from '../utils/format';
   import Button from '../components/ui/Button.svelte';
   import Badge from '../components/ui/Badge.svelte';
   import Card from '../components/ui/Card.svelte';
@@ -340,6 +340,29 @@
       }
     }
   }
+
+  function displayPrice(cents: number): string {
+    const normalized = Math.max(0, Math.round(cents || 0));
+    return normalized === 0 ? '0' : formatIDR(normalized);
+  }
+
+  function handleHargaChange(id: number, e: Event) {
+    const target = e.target as HTMLInputElement;
+    const item = cart.items.find((i) => i.id === id);
+    if (sse.status !== 'online') {
+      toast.warning('Server sedang terputus (SSE offline). Harga tidak dapat diubah sementara.');
+      target.value = item ? displayPrice(item.harga_jual) : '0';
+      return;
+    }
+    const cents = parseIDR(target.value);
+    cart.updateHargaJual(id, cents);
+    target.value = displayPrice(cents);
+  }
+
+  function handleHargaReset(id: number) {
+    cart.resetHargaJual(id);
+    toast.info('Harga jual dikembalikan ke harga daftar.');
+  }
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
@@ -453,9 +476,36 @@
                       {/if}
                     </td>
 
-                    <!-- Unit Price -->
-                    <td class="py-2.5 px-4 text-right font-medium text-[var(--text-secondary)] tabular-nums">
-                      <Rupiah value={item.harga_jual} />
+                    <!-- Unit Price (editable: harga jual yang disepakati) -->
+                    <td class="py-2.5 px-4 text-right">
+                      <div class="flex flex-col items-end gap-1">
+                        <div class="relative flex items-center">
+                          <span class="absolute left-2 text-[10px] font-semibold text-[var(--text-muted)] pointer-events-none">Rp</span>
+                          <input
+                            type="text"
+                            inputmode="numeric"
+                            value={displayPrice(item.harga_jual)}
+                            oninput={(e) => handleHargaChange(item.id, e)}
+                            aria-label={`Harga jual ${item.nama_barang}`}
+                            title="Ubah harga jual yang disepakati"
+                            class="w-28 h-8 pl-7 pr-2 rounded-md border text-right text-xs font-semibold tabular-nums transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--brand)] focus:border-[var(--brand)]
+                              {item.harga_jual !== item.harga_jual_awal
+                                ? 'border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400'
+                                : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}"
+                          />
+                        </div>
+                        {#if item.harga_jual !== item.harga_jual_awal}
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:underline tabular-nums"
+                            onclick={() => handleHargaReset(item.id)}
+                            title={`Kembalikan ke harga daftar ${formatRupiah(item.harga_jual_awal)}`}
+                          >
+                            <RotateCcw class="w-2.5 h-2.5" />
+                            <span>disesuaikan</span>
+                          </button>
+                        {/if}
+                      </div>
                     </td>
 
                     <!-- Quantity Stepper -->
@@ -551,10 +601,33 @@
 
                 <!-- Bottom Row: Price Info & Touch Stepper -->
                 <div class="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border-subtle)]/60">
-                  <div class="min-w-0">
-                    <span class="text-[11px] text-[var(--text-muted)] block">
-                      <Rupiah value={item.harga_jual} /> / item
-                    </span>
+                  <div class="min-w-0 flex flex-col gap-1">
+                    <div class="relative flex items-center">
+                      <span class="absolute left-2 text-[10px] font-semibold text-[var(--text-muted)] pointer-events-none">Rp</span>
+                      <input
+                        type="text"
+                        inputmode="numeric"
+                        value={displayPrice(item.harga_jual)}
+                        oninput={(e) => handleHargaChange(item.id, e)}
+                        aria-label={`Harga jual ${item.nama_barang}`}
+                        title="Ubah harga jual yang disepakati"
+                        class="w-28 h-8 pl-7 pr-2 rounded-md border text-right text-xs font-semibold tabular-nums transition-colors focus:outline-none focus:ring-1 focus:ring-[var(--brand)] focus:border-[var(--brand)]
+                          {item.harga_jual !== item.harga_jual_awal
+                            ? 'border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400'
+                            : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}"
+                      />
+                    </div>
+                    {#if item.harga_jual !== item.harga_jual_awal}
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 hover:underline tabular-nums"
+                        onclick={() => handleHargaReset(item.id)}
+                        title={`Kembalikan ke harga daftar ${formatRupiah(item.harga_jual_awal)}`}
+                      >
+                        <RotateCcw class="w-2.5 h-2.5" />
+                        <span>disesuaikan</span>
+                      </button>
+                    {/if}
                     <span class="text-sm font-bold text-[var(--brand)] tabular-nums block">
                       <Rupiah value={subtotal} />
                     </span>
@@ -644,6 +717,10 @@
             />
           </div>
         </div>
+
+        <p class="text-[10px] leading-relaxed text-[var(--text-muted)]">
+          Ubah <span class="font-semibold text-[var(--text-secondary)]">Harga Satuan</span> pada daftar barang untuk menyesuaikan harga jual yang disepakati. Dua digit terakhir dianggap sebagai sen.
+        </p>
 
         <!-- Big Checkout Action Button -->
         <div class="pt-2">

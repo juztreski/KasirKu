@@ -73,8 +73,14 @@ export default async function(req: Request, token: string) {
         if ((barang.stok_barang - data.jumlah_barang) < 0) return new Response("1", { status: 403 });
         
         data.harga_modal = barang.harga_modal;
-        data.harga_jual = barang.harga_jual;
         data.nama_barang = barang.nama_barang;
+
+        // Harga jual yang disepakati dapat disesuaikan oleh kasir saat penjualan.
+        // Fallback ke harga daftar dari database bila nilai tidak valid.
+        const client_harga_jual = Number(data.harga_jual);
+        data.harga_jual = (Number.isFinite(client_harga_jual) && client_harga_jual >= 0)
+            ? Math.round(client_harga_jual)
+            : barang.harga_jual;
         
         total_harga_modal += data.harga_modal * data.jumlah_barang;
         total_harga_jual += data.harga_jual * data.jumlah_barang;
