@@ -14,6 +14,7 @@
     Undo2,
     ReceiptText,
     TrendingDown,
+    HandCoins,
     BarChart3,
     Users,
     ShieldAlert,
@@ -102,6 +103,7 @@
       items: [
         { name: 'Penjualan', path: '/pembukuan/penjualan', icon: ReceiptText, permission: Permissions.MANAGE_PEMBUKUAN },
         { name: 'Pengeluaran', path: '/pembukuan/pengeluaran', icon: TrendingDown, permission: Permissions.MANAGE_PEMBUKUAN },
+        { name: 'Piutang', path: '/pembukuan/piutang', icon: HandCoins, permission: Permissions.MANAGE_PEMBUKUAN },
         { name: 'Laporan', path: '/pembukuan/laporan', icon: BarChart3, permission: Permissions.MANAGE_PEMBUKUAN },
       ],
     },

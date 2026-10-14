@@ -63,6 +63,11 @@
     modified_ms: number;
     nama_kasir: string | null;
     kasir_profile_img?: string | null;
+    metode_bayar?: number;
+    nama_pelanggan?: string | null;
+    no_telepon_pelanggan?: string | null;
+    jumlah_dibayar?: number;
+    sisa_piutang?: number;
   }
 
   export interface PenjualanItemDetail {
@@ -190,14 +195,23 @@
     // Ensure public info is fresh
     await auth.fetchPublicInfo();
 
+    const isKredit = Number(targetItem.metode_bayar) === 1;
+    const dibayar = Number(targetItem.jumlah_dibayar) || targetItem.total_harga_jual;
+    const sisa = Number(targetItem.sisa_piutang) || 0;
+
     receiptModalData = {
       receiptNo: targetItem.no_struk,
       timestamp: new Date(targetItem.created_ms).toISOString(),
       cashierName: targetItem.nama_kasir || 'Kasir',
       totalAmount: targetItem.total_harga_jual,
       totalItems: targetItem.total_barang,
-      cashPaid: targetItem.total_harga_jual,
+      cashPaid: isKredit ? dibayar : targetItem.total_harga_jual,
       changeAmount: 0,
+      paymentMethod: isKredit ? 'kredit' : 'tunai',
+      customerName: targetItem.nama_pelanggan || undefined,
+      customerPhone: targetItem.no_telepon_pelanggan || undefined,
+      amountPaid: dibayar,
+      remainingDebt: sisa,
       items: itemsToUse.map((d: any) => ({
         id: d.id || 0,
         nama_barang: d.nama_barang,

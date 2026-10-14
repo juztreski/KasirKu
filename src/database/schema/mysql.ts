@@ -173,6 +173,22 @@ export const penjualan = mysqlTable("penjualan", {
     total_harga_jual:
         int("total_harga_jual")
         .notNull(),
+    metode_bayar:
+        int("metode_bayar")
+        .notNull()
+        .default(0),
+    nama_pelanggan:
+        text("nama_pelanggan"),
+    no_telepon_pelanggan:
+        text("no_telepon_pelanggan"),
+    jumlah_dibayar:
+        int("jumlah_dibayar")
+        .notNull()
+        .default(0),
+    sisa_piutang:
+        int("sisa_piutang")
+        .notNull()
+        .default(0),
     tanggal_key:
         int("tanggal_key")
         .notNull(),
@@ -227,6 +243,36 @@ export const penjualan_item = mysqlTable("penjualan_item", {
         bigint("modified_ms", { mode: "number" })
         .notNull(),
 });
+
+export const pembayaran_piutang = mysqlTable("pembayaran_piutang", {
+    id:
+        int("id")
+        .primaryKey()
+        .autoincrement(),
+    penjualan_id:
+        int("penjualan_id")
+        .notNull()
+        .references(() => penjualan.id, {
+            onDelete: "cascade",
+            onUpdate: "cascade"
+        }),
+    jumlah_bayar:
+        int("jumlah_bayar")
+        .notNull(),
+    catatan:
+        text("catatan"),
+    tanggal_key:
+        int("tanggal_key")
+        .notNull(),
+    created_ms:
+        bigint("created_ms", { mode: "number" })
+        .notNull(),
+    modified_ms:
+        bigint("modified_ms", { mode: "number" })
+        .notNull(),
+}, (table) => [
+    index("pembayaran_piutang_penjualan_id_idx").on(table.penjualan_id),
+]);
 
 export const pembukuan = mysqlTable("pembukuan", {
     id:

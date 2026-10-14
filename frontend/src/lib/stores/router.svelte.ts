@@ -9,6 +9,7 @@ function normalizeRoute(p: string): string {
   if (cleaned === '/dashboard') cleaned = '/';
   if (cleaned === '/penjualan') cleaned = '/pembukuan/penjualan';
   if (cleaned === '/pengeluaran') cleaned = '/pembukuan/pengeluaran';
+  if (cleaned === '/piutang') cleaned = '/pembukuan/piutang';
   if (cleaned === '/laporan') cleaned = '/pembukuan/laporan';
   return cleaned;
 }

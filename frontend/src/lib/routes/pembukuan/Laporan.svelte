@@ -13,6 +13,7 @@
   import Skeleton from '../../components/ui/Skeleton.svelte';
   import DatePicker from '../../components/ui/DatePicker.svelte';
   import TablePagination from '../../components/ui/TablePagination.svelte';
+  import { buildCsv, downloadCsv } from '../../utils/csv';
   import {
     formatRupiah,
     formatNumber,
@@ -41,7 +42,8 @@
     ArrowUp,
     ArrowDown,
     Package,
-    Wallet
+    Wallet,
+    Download
   } from 'lucide-svelte';
 
   interface PenjualanRecord {
@@ -66,9 +68,10 @@
   interface LaporanData {
     penjualan: PenjualanRecord[];
     pengeluaran: PengeluaranRecord[];
+    penerimaan_piutang: PengeluaranRecord[];
   }
 
-  let data = $state<LaporanData>({ penjualan: [], pengeluaran: [] });
+  let data = $state<LaporanData>({ penjualan: [], pengeluaran: [], penerimaan_piutang: [] });
   let loading = $state(true);
   let activeTab = $state<'summary' | 'penjualan' | 'pengeluaran'>('summary');
 
@@ -111,13 +114,35 @@
       data = {
         penjualan: Array.isArray(parsed?.penjualan) ? parsed.penjualan : [],
         pengeluaran: Array.isArray(parsed?.pengeluaran) ? parsed.pengeluaran : [],
+        penerimaan_piutang: Array.isArray(parsed?.penerimaan_piutang) ? parsed.penerimaan_piutang : [],
       };
     } catch (err: any) {
       toast.error('Gagal memuat laporan finansial: ' + (err.message || ''));
-      data = { penjualan: [], pengeluaran: [] };
+      data = { penjualan: [], pengeluaran: [], penerimaan_piutang: [] };
     } finally {
       loading = false;
     }
+  }
+
+  function exportCsv() {
+    const headers = ['Kategori', 'Waktu', 'Keterangan', 'Jumlah'];
+    const rows: (string | number)[][] = [];
+    for (const p of data.penjualan) {
+      rows.push(['Penjualan', formatDateTime(p.created_ms), p.no_struk, (Number(p.total_harga_jual) / 100).toFixed(2)]);
+    }
+    for (const e of data.pengeluaran) {
+      rows.push(['Pengeluaran', formatDateTime(e.created_ms), e.deskripsi, (-Number(e.jumlah_uang) / 100).toFixed(2)]);
+    }
+    for (const pi of data.penerimaan_piutang) {
+      rows.push(['Penerimaan Piutang', formatDateTime(pi.created_ms), pi.deskripsi, (Number(pi.jumlah_uang) / 100).toFixed(2)]);
+    }
+    if (rows.length === 0) {
+      toast.warning('Tidak ada data laporan untuk diekspor.');
+      return;
+    }
+    const csv = buildCsv(headers, rows);
+    downloadCsv(`laporan_${getTanggalKey(startDate)}_${getTanggalKey(endDate)}.csv`, csv);
+    toast.success(`Berhasil mengekspor ${rows.length} baris laporan ke CSV.`);
   }
 
   // Financial Computations
@@ -128,6 +153,7 @@
   let grossMarginPct = $derived(totalOmzet > 0 ? ((labaKotor / totalOmzet) * 100).toFixed(1) : '0.0');
 
   let totalPengeluaran = $derived(data.pengeluaran.reduce((sum, exp) => sum + (Number(exp.jumlah_uang) || 0), 0));
+  let totalPenerimaanPiutang = $derived(data.penerimaan_piutang.reduce((sum, p) => sum + (Number(p.jumlah_uang) || 0), 0));
   let labaBersih = $derived(labaKotor - totalPengeluaran);
   let netMarginPct = $derived(totalOmzet > 0 ? ((labaBersih / totalOmzet) * 100).toFixed(1) : '0.0');
   let avgOrderValue = $derived(totalTransaksi > 0 ? Math.round(totalOmzet / totalTransaksi) : 0);
@@ -266,6 +292,16 @@
     </div>
 
     <div class="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        size="sm"
+        onclick={exportCsv}
+        title="Ekspor laporan ke CSV"
+      >
+        <Download class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Export CSV</span>
+      </Button>
+
       <Button
         variant="secondary"
         size="sm"
@@ -555,6 +591,20 @@
               </div>
               <div class="text-right">
                 <span class="font-medium text-xs tabular-nums text-red-600 dark:text-red-400">- {formatRupiah(totalPengeluaran)}</span>
+              </div>
+            </div>
+
+            <!-- 4b. Penerimaan Piutang (informasi arus kas, bukan omzet tambahan) -->
+            <div class="px-5 py-3.5 flex items-center justify-between hover:bg-[var(--bg-hover)] transition-colors">
+              <div>
+                <div class="font-semibold text-[var(--text-primary)] text-xs flex items-center gap-1.5">
+                  Penerimaan Piutang
+                  <span class="text-[10px] font-normal text-neutral-400">(info arus kas)</span>
+                </div>
+                <div class="text-[11px] text-[var(--text-secondary)] mt-0.5">Kas masuk dari pembayaran hutang pelanggan ({formatNumber(data.penerimaan_piutang.length)} transaksi)</div>
+              </div>
+              <div class="text-right">
+                <span class="font-medium text-xs tabular-nums text-emerald-600 dark:text-emerald-400">+ {formatRupiah(totalPenerimaanPiutang)}</span>
               </div>
             </div>
 

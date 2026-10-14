@@ -21,6 +21,7 @@
   import ReturBarang from './lib/routes/barang/ReturBarang.svelte';
   import Penjualan from './lib/routes/pembukuan/Penjualan.svelte';
   import Pengeluaran from './lib/routes/pembukuan/Pengeluaran.svelte';
+  import Piutang from './lib/routes/pembukuan/Piutang.svelte';
   import Laporan from './lib/routes/pembukuan/Laporan.svelte';
   import Users from './lib/routes/admin/Users.svelte';
   import Roles from './lib/routes/admin/Roles.svelte';
@@ -103,6 +104,8 @@
         <Penjualan />
       {:else if (router.currentPath === '/pembukuan/pengeluaran' || router.currentPath === '/pengeluaran') && auth.can(Permissions.MANAGE_PEMBUKUAN)}
         <Pengeluaran />
+      {:else if (router.currentPath === '/pembukuan/piutang' || router.currentPath === '/piutang') && auth.can(Permissions.MANAGE_PEMBUKUAN)}
+        <Piutang />
       {:else if (router.currentPath === '/pembukuan/laporan' || router.currentPath === '/laporan') && auth.can(Permissions.MANAGE_PEMBUKUAN)}
         <Laporan />
       {:else if router.currentPath === '/users' && auth.can(Permissions.ADMINISTRATOR)}

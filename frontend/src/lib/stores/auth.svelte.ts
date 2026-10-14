@@ -32,7 +32,7 @@ export function getRequiredPermissionForPath(path: string): number | null {
   if (p === '/' || p === '/dashboard') return Permissions.DASHBOARD;
   if (p === '/kasir') return Permissions.KASIR;
   if (p.startsWith('/barang/') || p === '/barang') return Permissions.MANAGE_BARANG;
-  if (p.startsWith('/pembukuan/') || p === '/penjualan' || p === '/pengeluaran' || p === '/laporan') return Permissions.MANAGE_PEMBUKUAN;
+  if (p.startsWith('/pembukuan/') || p === '/penjualan' || p === '/pengeluaran' || p === '/piutang' || p === '/laporan') return Permissions.MANAGE_PEMBUKUAN;
   if (p === '/users' || p === '/rp' || p === '/settings') return Permissions.ADMINISTRATOR;
   if (p === '/profile' || p === '/login') return null;
   return null;

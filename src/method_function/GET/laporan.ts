@@ -50,7 +50,14 @@ export default async function(req: Request, url: URL, user_info: user_session_in
         .from(pembukuan)
     .where(and(eq(pembukuan.tipe, 1), gte(pembukuan.tanggal_key, tanggal_start), lte(pembukuan.tanggal_key, tanggal_end)));
 
+    const penerimaan_piutang_res = await db
+        .select()
+        .from(pembukuan)
+    .where(and(eq(pembukuan.tipe, 2), gte(pembukuan.tanggal_key, tanggal_start), lte(pembukuan.tanggal_key, tanggal_end)));
+
     return new Response(JSON.stringify({
-        penjualan: penjualan_res, pengeluaran: pengeluaran_res
+        penjualan: penjualan_res,
+        pengeluaran: pengeluaran_res,
+        penerimaan_piutang: penerimaan_piutang_res
     }), {status: 200});
 }

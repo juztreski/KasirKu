@@ -167,6 +167,22 @@ export const penjualan = sqliteTable("penjualan", {
     total_harga_jual:
         integer("total_harga_jual")
         .notNull(),
+    metode_bayar:
+        integer("metode_bayar")
+        .notNull()
+        .default(0),
+    nama_pelanggan:
+        text("nama_pelanggan"),
+    no_telepon_pelanggan:
+        text("no_telepon_pelanggan"),
+    jumlah_dibayar:
+        integer("jumlah_dibayar")
+        .notNull()
+        .default(0),
+    sisa_piutang:
+        integer("sisa_piutang")
+        .notNull()
+        .default(0),
     tanggal_key:
         integer("tanggal_key")
         .notNull(),
@@ -220,6 +236,35 @@ export const penjualan_item = sqliteTable("penjualan_item", {
         integer("modified_ms")
         .notNull(),
 });
+
+export const pembayaran_piutang = sqliteTable("pembayaran_piutang", {
+    id:
+        integer("id")
+        .primaryKey(),
+    penjualan_id:
+        integer("penjualan_id")
+        .notNull()
+        .references(() => penjualan.id, {
+            onDelete: "cascade",
+            onUpdate: "cascade"
+        }),
+    jumlah_bayar:
+        integer("jumlah_bayar")
+        .notNull(),
+    catatan:
+        text("catatan"),
+    tanggal_key:
+        integer("tanggal_key")
+        .notNull(),
+    created_ms:
+        integer("created_ms")
+        .notNull(),
+    modified_ms:
+        integer("modified_ms")
+        .notNull(),
+}, (table) => [
+    index("pembayaran_piutang_penjualan_id_idx").on(table.penjualan_id),
+]);
 
 export const pembukuan = sqliteTable("pembukuan", {
     id:

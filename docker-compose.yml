@@ -26,12 +26,11 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
+      - "${APP_LISTEN_PORT}:${APP_LISTEN_PORT}"
     volumes:
       - ./cert:/app/cert
-      - profile_img_data:/app/profile_img
-      - app_data:/app/database
+      - ./profile_img:/app/profile_img
+      - ./database:/app/database
     networks:
       - default
 
@@ -56,10 +55,20 @@ services:
     networks:
       - default
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: kasirku-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file:
+      - ./cloudflared.env
+    depends_on:
+      - app
+    networks:
+      - default
+
 volumes:
   postgres_data:
-  profile_img_data:
-  app_data:
 
 networks:
   default:

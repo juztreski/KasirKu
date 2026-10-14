@@ -82,7 +82,12 @@ export function main() {
 
         const url = new URL(req.url);
         url.pathname = decodeURIComponent(url.pathname);
-        const remote_ip = server.requestIP(req)?.address;
+        const forwarded_ip = (
+            req.headers.get("cf-connecting-ip") ||
+            req.headers.get("x-forwarded-for")?.split(",")[0] ||
+            ""
+        ).trim();
+        const remote_ip = forwarded_ip || server.requestIP(req)?.address;
         if (!remote_ip) return new Response(null, { status: 400 });
 
         const cookies = parse_cookie(req.headers.get("cookie") as string);
@@ -267,27 +272,32 @@ export function main() {
             }
         });
 
-        bun_serve2 = Bun.serve({
-            port: 80,
-            async fetch(req: Request) {
-                const url = new URL(req.url);
+        try {
+            bun_serve2 = Bun.serve({
+                port: 80,
+                async fetch(req: Request) {
+                    const url = new URL(req.url);
 
-                if (url.pathname === "/ping") {
-                    return new Response("", {
-                        headers: {
-                            "Access-Control-Allow-Origin": "*"
-                        },
-                        status: 200,
+                    if (url.pathname === "/ping") {
+                        return new Response("", {
+                            headers: {
+                                "Access-Control-Allow-Origin": "*"
+                            },
+                            status: 200,
 
-                    });
+                        });
+                    }
+
+                    url.protocol = "https:";
+                    url.port = String(Bun.env.APP_LISTEN_PORT);
+
+                    return Response.redirect(url.toString(), 302);
                 }
-
-                url.protocol = "https:";
-                url.port = String(Bun.env.APP_LISTEN_PORT);
-
-                return Response.redirect(url.toString(), 302);
-            }
-        });
+            });
+        } catch (err) {
+            console.warn("[WARN] Could not bind port 80 for HTTP->HTTPS redirect (need root/CAP_NET_BIND_SERVICE). Continuing without redirect.");
+            bun_serve2 = null;
+        }
     } else {
         bun_serve = Bun.serve({
             port: Bun.env.APP_LISTEN_PORT,

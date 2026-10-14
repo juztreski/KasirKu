@@ -15,6 +15,13 @@
       "when": 1790693036319,
       "tag": "0001_add_user_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1791948368942,
+      "tag": "0002_add_piutang_credit",
+      "breakpoints": true
     }
   ]
 }

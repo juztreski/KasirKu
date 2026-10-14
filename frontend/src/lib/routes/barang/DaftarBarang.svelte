@@ -17,6 +17,7 @@
   import Badge from '../../components/ui/Badge.svelte';
   import Skeleton from '../../components/ui/Skeleton.svelte';
   import TablePagination from '../../components/ui/TablePagination.svelte';
+  import { buildCsv, parseCsv, downloadCsv } from '../../utils/csv';
   import {
     formatRupiah,
     formatRupiahInput,
@@ -45,7 +46,9 @@
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
-    CheckCircle2
+    CheckCircle2,
+    Download,
+    Upload
   } from 'lucide-svelte';
 
   export interface BarangItem {
@@ -124,6 +127,10 @@
   // Pagination
   let currentPage = $state(1);
   let pageSize = $state(10);
+
+  // CSV Import / Export
+  let importInput = $state<HTMLInputElement | undefined>(undefined);
+  let isImporting = $state(false);
 
   async function loadData() {
     loading = true;
@@ -451,6 +458,124 @@
     }
   }
 
+  function normalizeCsvNumber(raw: string | null | undefined): number {
+    if (raw === null || raw === undefined) return 0;
+    let s = String(raw).trim().replace(/rp/gi, '').replace(/\s/g, '');
+    if (!s) return 0;
+    const hasDot = s.includes('.');
+    const hasComma = s.includes(',');
+    if (hasDot && hasComma) {
+      if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+      else s = s.replace(/,/g, '');
+    } else if (hasComma) {
+      const parts = s.split(',');
+      if (parts.length === 2 && parts[1].length === 3) s = s.replace(/,/g, '');
+      else s = s.replace(/,/g, '.');
+    } else if (hasDot) {
+      const parts = s.split('.');
+      if (parts[parts.length - 1].length === 3) s = s.replace(/\./g, '');
+    }
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function exportCsv() {
+    if (filteredBarang.length === 0) {
+      toast.warning('Tidak ada data barang untuk diekspor.');
+      return;
+    }
+    const headers = ['Nama Barang', 'Barcode', 'Kategori', 'Stok', 'Harga Modal', 'Harga Jual'];
+    const rows = filteredBarang.map((b) => [
+      b.nama_barang,
+      b.barcode_barang || '',
+      b.nama_kategori || kategoriList.find((k) => k.id === b.kategori_barang_id)?.nama_kategori || 'Tanpa Kategori',
+      b.stok_barang,
+      (Number(b.harga_modal) / 100).toFixed(2),
+      (Number(b.harga_jual) / 100).toFixed(2),
+    ]);
+    const csv = buildCsv(headers, rows);
+    const stamp = formatDateTime(Date.now()).replace(/[: ]/g, '-');
+    downloadCsv(`daftar_barang_${stamp}.csv`, csv);
+    toast.success(`Berhasil mengekspor ${rows.length} barang ke CSV.`);
+  }
+
+  function triggerImport() {
+    importInput?.click();
+  }
+
+  async function handleImportFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    isImporting = true;
+    try {
+      const text = await file.text();
+      const parsed = parseCsv(text);
+      if (parsed.length < 2) {
+        toast.error('File CSV kosong atau tidak berisi baris data.');
+        return;
+      }
+
+      const header = parsed[0].map((h) => h.trim().toLowerCase());
+      const findCol = (...names: string[]) => header.findIndex((h) => names.includes(h));
+
+      const iNama = findCol('nama barang', 'nama_barang', 'nama', 'product name', 'product');
+      const iBarcode = findCol('barcode', 'barcode_barang', 'kode', 'kode barang', 'sku');
+      const iKategori = findCol('kategori', 'kategori_barang', 'category');
+      const iStok = findCol('stok', 'stok_barang', 'stock', 'qty', 'jumlah');
+      const iModal = findCol('harga modal', 'harga_modal', 'modal', 'harga beli', 'cost');
+      const iJual = findCol('harga jual', 'harga_jual', 'jual', 'harga', 'price', 'sell price');
+
+      if (iNama < 0) {
+        toast.error('Kolom "Nama Barang" tidak ditemukan pada file CSV.');
+        return;
+      }
+
+      const rows: any[] = [];
+      for (let r = 1; r < parsed.length; r++) {
+        const cols = parsed[r];
+        const nama = (cols[iNama] || '').trim();
+        if (!nama) continue;
+        rows.push({
+          nama_barang: nama,
+          barcode: iBarcode >= 0 ? (cols[iBarcode] || '').trim() : '',
+          kategori: iKategori >= 0 ? (cols[iKategori] || '').trim() : '',
+          stok: iStok >= 0 ? Math.max(0, Math.floor(normalizeCsvNumber(cols[iStok]))) : 0,
+          harga_modal: iModal >= 0 ? normalizeCsvNumber(cols[iModal]) : 0,
+          harga_jual: iJual >= 0 ? normalizeCsvNumber(cols[iJual]) : 0,
+        });
+      }
+
+      if (rows.length === 0) {
+        toast.error('Tidak ada baris data valid yang bisa diimpor.');
+        return;
+      }
+
+      const res = await api.post('/import_barang', { rows });
+      const result = typeof res === 'string' ? JSON.parse(res) : res;
+
+      let msg = `${result.created || 0} ditambahkan, ${result.updated || 0} diperbarui`;
+      if (result.skipped) msg += `, ${result.skipped} dilewati`;
+      toast.success(`Impor selesai: ${msg}.`);
+
+      if (Array.isArray(result.errors) && result.errors.length > 0) {
+        const detail = result.errors
+          .slice(0, 3)
+          .map((e: any) => `Baris ${e.row}: ${e.message}`)
+          .join('\n');
+        toast.warning(`${result.errors.length} baris bermasalah.\n${detail}`, 'Detail Impor');
+      }
+
+      await loadData();
+    } catch (err: any) {
+      toast.error('Gagal mengimpor CSV: ' + (err.message || ''));
+    } finally {
+      isImporting = false;
+    }
+  }
+
   function checkUrlCategory() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -626,6 +751,14 @@
 </script>
 
 <div class="space-y-6">
+  <input
+    type="file"
+    accept=".csv,text/csv"
+    bind:this={importInput}
+    onchange={handleImportFile}
+    class="hidden"
+  />
+
   <!-- Page Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[var(--border-subtle)] pb-3">
     <div class="flex items-center gap-2.5">
@@ -636,6 +769,27 @@
     </div>
 
     <div class="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        size="sm"
+        onclick={exportCsv}
+        title="Ekspor daftar barang ke CSV"
+      >
+        <Download class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Export</span>
+      </Button>
+
+      <Button
+        variant="secondary"
+        size="sm"
+        onclick={triggerImport}
+        loading={isImporting}
+        title="Impor daftar barang dari CSV"
+      >
+        <Upload class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Import</span>
+      </Button>
+
       <Button
         variant="secondary"
         size="sm"

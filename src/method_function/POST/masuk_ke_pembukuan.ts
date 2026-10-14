@@ -42,6 +42,16 @@ export default async function(req: Request, token: string) {
     }];
 
     if (!Array.isArray(items)) return new Response("Bad Request", {status: 400});
+
+    const metode_bayar = Number(user_data.metode_bayar) === 1 ? 1 : 0;
+    let nama_pelanggan = user_data.nama_pelanggan ? String(user_data.nama_pelanggan).trim() : null;
+    let no_telepon_pelanggan = user_data.no_telepon_pelanggan ? String(user_data.no_telepon_pelanggan).trim() : null;
+    let jumlah_dibayar = Number(user_data.jumlah_dibayar);
+
+    if (metode_bayar === 1 && !nama_pelanggan) return new Response("2", { status: 400 });
+    if (nama_pelanggan === "") nama_pelanggan = null;
+    if (no_telepon_pelanggan === "") no_telepon_pelanggan = null;
+
     const date = global.date;
     const now = global.date.getTime();
     const date_now = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
@@ -69,6 +79,18 @@ export default async function(req: Request, token: string) {
         total_harga_modal += data.harga_modal * data.jumlah_barang;
         total_harga_jual += data.harga_jual * data.jumlah_barang;
     }
+
+    let sisa_piutang = 0;
+    if (metode_bayar === 1) {
+        if (!Number.isFinite(jumlah_dibayar) || jumlah_dibayar < 0) jumlah_dibayar = 0;
+        if (jumlah_dibayar > total_harga_jual) return new Response("3", { status: 400 });
+        sisa_piutang = total_harga_jual - jumlah_dibayar;
+    } else {
+        jumlah_dibayar = total_harga_jual;
+        sisa_piutang = 0;
+        nama_pelanggan = null;
+        no_telepon_pelanggan = null;
+    }
     
     try {
         await db.transaction(async (trx: any) => {
@@ -81,6 +103,11 @@ export default async function(req: Request, token: string) {
                 total_barang,
                 total_harga_modal,
                 total_harga_jual,
+                metode_bayar,
+                nama_pelanggan,
+                no_telepon_pelanggan,
+                jumlah_dibayar,
+                sisa_piutang,
                 tanggal_key: date_now,
                 created_ms: now,
                 modified_ms: now
@@ -133,6 +160,11 @@ export default async function(req: Request, token: string) {
         code: "TAMBAH_PENJUALAN",
         data: {
             items,
+            metode_bayar,
+            nama_pelanggan,
+            no_telepon_pelanggan,
+            jumlah_dibayar,
+            sisa_piutang,
             tanggal_key: date_now
         }
     }));

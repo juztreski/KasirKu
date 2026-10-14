@@ -14,3 +14,4 @@ database/*.db
 
 config.json
 .env
+cloudflared.env

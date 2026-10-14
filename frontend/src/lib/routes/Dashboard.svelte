@@ -33,6 +33,7 @@
     Wallet,
     Percent,
     Layers,
+    HandCoins,
     ArrowRight,
     ChevronDown,
     Check
@@ -56,6 +57,12 @@
     jumlah: number;
   }
 
+  interface PiutangTotal {
+    total_piutang: number | null;
+    jumlah_transaksi: number | null;
+    jumlah_pelanggan: number | null;
+  }
+
   let loading = $state(true);
   let refreshing = $state(false);
   let lastSyncedTime = $state<string>('');
@@ -69,6 +76,7 @@
 
   let barangKosong = $state<BarangKosong[]>([]);
   let barangTerjualList = $state<BarangTerjualItem[]>([]);
+  let piutangTotal = $state<PiutangTotal | null>(null);
   let filterBarangKosongQuery = $state('');
   let filterTerjualQuery = $state('');
 
@@ -161,6 +169,16 @@
     }
   }
 
+  async function fetchPiutangTotal() {
+    if (!auth.can(Permissions.MANAGE_PEMBUKUAN)) return;
+    try {
+      const res = await api.get<PiutangTotal>('/api/piutang_total');
+      piutangTotal = res;
+    } catch (err) {
+      console.error('Error fetching piutang total:', err);
+    }
+  }
+
   async function fetchBarangTerjualTanggal() {
     loadingSalesDate = true;
     try {
@@ -202,6 +220,7 @@
       fetchTotalInfo(),
       fetchBarangKosong(),
       fetchBarangTerjualTanggal(),
+      fetchPiutangTotal(),
     ]);
     const now = new Date();
     lastSyncedTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
@@ -232,6 +251,9 @@
       } else if (event.type === 2) {
         // type 2 = TAMBAH/UPDATE/DELETE_BARANG
         fetchBarangKosong();
+      } else if (event.type === 6) {
+        // type 6 = pembayaran / perubahan piutang
+        fetchPiutangTotal();
       }
     });
   });
@@ -391,26 +413,63 @@
         </div>
       </div>
 
-      <!-- Bottom Row: Volume Terjual -->
-      <div class="px-5 py-3.5 border-t border-neutral-200/80 dark:border-neutral-800/80 flex items-center justify-between bg-neutral-50/30 dark:bg-neutral-900/20">
-        <div class="flex items-center gap-3 min-w-0">
-          <div class="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700/80 flex items-center justify-center shrink-0">
-            <ShoppingBag class="w-4 h-4" />
-          </div>
-          <div class="min-w-0">
-            <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100 block tracking-tight">Volume Terjual</span>
-            <span class="text-[11px] text-neutral-500 dark:text-neutral-400">Total unit barang yang laku terjual hari ini</span>
-          </div>
-        </div>
-        <div class="text-right shrink-0">
-          {#if loading}
-            <Skeleton class="h-6 w-20 ml-auto" />
-          {:else}
-            <div class="text-lg sm:text-xl font-bold text-neutral-900 dark:text-neutral-100 tabular-nums whitespace-nowrap tracking-tight">
-              {formatNumber(totalInfo.total_barang ?? 0)} <span class="text-xs font-normal text-neutral-400 dark:text-neutral-500">unit</span>
+      <!-- Bottom Row: Volume Terjual & Piutang -->
+      <div class="border-t border-neutral-200/80 dark:border-neutral-800/80 bg-neutral-50/30 dark:bg-neutral-900/20 grid grid-cols-1 {auth.can(Permissions.MANAGE_PEMBUKUAN) ? 'sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200/80 dark:divide-neutral-800/80' : ''}">
+        <div class="px-5 py-3.5 flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700/80 flex items-center justify-center shrink-0">
+              <ShoppingBag class="w-4 h-4" />
             </div>
-          {/if}
+            <div class="min-w-0">
+              <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100 block tracking-tight">Volume Terjual</span>
+              <span class="text-[11px] text-neutral-500 dark:text-neutral-400">Total unit barang yang laku terjual hari ini</span>
+            </div>
+          </div>
+          <div class="text-right shrink-0">
+            {#if loading}
+              <Skeleton class="h-6 w-20 ml-auto" />
+            {:else}
+              <div class="text-lg sm:text-xl font-bold text-neutral-900 dark:text-neutral-100 tabular-nums whitespace-nowrap tracking-tight">
+                {formatNumber(totalInfo.total_barang ?? 0)} <span class="text-xs font-normal text-neutral-400 dark:text-neutral-500">unit</span>
+              </div>
+            {/if}
+          </div>
         </div>
+
+        {#if auth.can(Permissions.MANAGE_PEMBUKUAN)}
+          <button
+            type="button"
+            onclick={() => router.navigate('/pembukuan/piutang')}
+            class="px-5 py-3.5 flex items-center justify-between gap-4 text-left hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 transition-colors cursor-pointer group"
+            title="Lihat daftar piutang pelanggan"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+                <HandCoins class="w-4 h-4" />
+              </div>
+              <div class="min-w-0">
+                <span class="text-sm font-semibold text-neutral-900 dark:text-neutral-100 block tracking-tight">Piutang Aktif</span>
+                <span class="text-[11px] text-neutral-500 dark:text-neutral-400 tabular-nums">
+                  {#if piutangTotal}
+                    {formatNumber(piutangTotal.jumlah_transaksi ?? 0)} transaksi · {formatNumber(piutangTotal.jumlah_pelanggan ?? 0)} pelanggan
+                  {:else}
+                    Total tagihan pelanggan belum lunas
+                  {/if}
+                </span>
+              </div>
+            </div>
+            <div class="text-right shrink-0 flex items-center gap-1.5">
+              {#if loading || !piutangTotal}
+                <Skeleton class="h-6 w-28" />
+              {:else}
+                <div class="text-lg sm:text-xl font-bold text-amber-600 dark:text-amber-400 tabular-nums whitespace-nowrap tracking-tight">
+                  <Rupiah value={piutangTotal.total_piutang ?? 0} />
+                </div>
+                <ArrowRight class="w-4 h-4 text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-200 transition-colors shrink-0" />
+              {/if}
+            </div>
+          </button>
+        {/if}
       </div>
     {/if}
   </div>

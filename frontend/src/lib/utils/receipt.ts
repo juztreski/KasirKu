@@ -27,6 +27,7 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
   { key: '{{no_struk}}', label: 'Nomor Struk / Nota', example: `TRX-${Date.now()}`, category: 'transaksi' },
   { key: '{{tanggal}}', label: 'Tanggal & Jam Transaksi', example: '19-07-2026 14:32:08', category: 'transaksi' },
   { key: '{{kasir}}', label: 'Nama Kasir yang Bertugas', example: 'John Doe', category: 'transaksi' },
+  { key: '{{pelanggan}}', label: 'Nama Pelanggan (transaksi kredit)', example: 'Budi Santoso', category: 'transaksi' },
 
   // Produk
   { key: '{{daftar_barang}}', label: 'Daftar Item / Produk (HTML Table)', example: 'Tabel daftar item belanjaan', category: 'produk' },
@@ -34,8 +35,11 @@ export const TEMPLATE_VARIABLES: TemplateVariable[] = [
 
   // Pembayaran
   { key: '{{total_belanja}}', label: 'Total Pembayaran', example: 'Rp172.000,00', category: 'pembayaran' },
+  { key: '{{metode_bayar}}', label: 'Metode Pembayaran (Tunai/Kredit)', example: 'Tunai', category: 'pembayaran' },
   { key: '{{tunai}}', label: 'Jumlah Uang Tunai', example: 'Rp200.000,00', category: 'pembayaran' },
   { key: '{{kembalian}}', label: 'Jumlah Uang Kembalian', example: 'Rp28.000,00', category: 'pembayaran' },
+  { key: '{{jumlah_dibayar}}', label: 'Jumlah Dibayar / Uang Muka (DP)', example: 'Rp50.000,00', category: 'pembayaran' },
+  { key: '{{sisa_hutang}}', label: 'Sisa Hutang / Piutang Pelanggan', example: 'Rp0,00', category: 'pembayaran' },
 ];
 
 export const RECEIPT_PRESETS = [
@@ -512,6 +516,16 @@ export function renderReceiptHtml(
   const totalBelanja = escapeHtml(data?.totalAmount !== undefined ? formatRupiah(data.totalAmount) : 'Rp 172.000');
   const tunai = escapeHtml(data?.cashPaid !== undefined ? formatRupiah(data.cashPaid) : 'Rp 200.000');
   const kembalian = escapeHtml(data?.changeAmount !== undefined ? formatRupiah(data.changeAmount) : 'Rp 28.000');
+  const metodeBayar = escapeHtml(data?.paymentMethod === 'kredit' ? 'Kredit' : 'Tunai');
+  const pelanggan = escapeHtml(data?.customerName || '');
+  const jumlahDibayar = escapeHtml(
+    data?.amountPaid !== undefined
+      ? formatRupiah(data.amountPaid)
+      : data?.cashPaid !== undefined
+        ? formatRupiah(data.cashPaid)
+        : 'Rp 200.000'
+  );
+  const sisaHutang = escapeHtml(data?.remainingDebt !== undefined ? formatRupiah(data.remainingDebt) : 'Rp0,00');
 
   const dummyItems = [
     { nama_barang: 'Indomie Goreng Rasa Ayam Geprek Sambal Korek Pedas Nampol Limited Edition', harga_jual: 3500, jumlah_barang: 2 },
@@ -534,11 +548,15 @@ export function renderReceiptHtml(
     .replaceAll('{{no_struk}}', noStruk)
     .replaceAll('{{tanggal}}', tanggal)
     .replaceAll('{{kasir}}', kasir)
+    .replaceAll('{{pelanggan}}', pelanggan)
     .replaceAll('{{daftar_barang}}', daftarBarangHtml)
     .replaceAll('{{total_barang}}', totalBarang)
     .replaceAll('{{total_belanja}}', totalBelanja)
+    .replaceAll('{{metode_bayar}}', metodeBayar)
     .replaceAll('{{tunai}}', tunai)
-    .replaceAll('{{kembalian}}', kembalian);
+    .replaceAll('{{kembalian}}', kembalian)
+    .replaceAll('{{jumlah_dibayar}}', jumlahDibayar)
+    .replaceAll('{{sisa_hutang}}', sisaHutang);
 
   // If content is a snippet without full <html> wrapper, wrap it cleanly for iframe rendering
   let fullHtml = rendered;

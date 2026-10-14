@@ -72,7 +72,7 @@ export async function stop_server() {
 }
 
 export async function setup_http_main() {
-    console.log(`[SETUP PAGE LOG] HTTP Server running in port 80`);
+    console.log(`[SETUP PAGE LOG] HTTP Server running in port 8080`);
 
     const fetch_handler = async (req: Request) => {
         const url = new URL(req.url);
@@ -132,7 +132,7 @@ export async function setup_http_main() {
     };
 
     bun_serve = Bun.serve({
-        port: 80,
+        port: 8080,
         fetch: fetch_handler,
         error(err: Error) {
             console.log(err);
