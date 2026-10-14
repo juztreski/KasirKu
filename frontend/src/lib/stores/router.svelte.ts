@@ -35,8 +35,18 @@ class RouterStore {
         const target = (e.target as HTMLElement).closest('a');
         if (!target) return;
 
-        const href = target.getAttribute('href');
-        if (!href || href.startsWith('http') || href.startsWith('mailto:') || target.getAttribute('target') === '_blank') {
+        const href = target.getAttribute('href') || '';
+        if (
+          !href ||
+          target.hasAttribute('download') ||
+          target.getAttribute('target') === '_blank' ||
+          href.startsWith('http') ||
+          href.startsWith('mailto:') ||
+          href.startsWith('tel:') ||
+          href.startsWith('blob:') ||
+          href.startsWith('data:') ||
+          href.startsWith('javascript:')
+        ) {
           return;
         }
 
