@@ -8,6 +8,7 @@
   import { auth, Permissions } from '../../stores/auth.svelte';
   import { toast } from '../../stores/toast.svelte';
   import { sse } from '../../stores/sse.svelte';
+  import { confirmDialog } from '../../stores/dialog.svelte';
   import Button from '../../components/ui/Button.svelte';
   import Input from '../../components/ui/Input.svelte';
   import Modal from '../../components/ui/Modal.svelte';
@@ -48,7 +49,9 @@
     Check,
     ChevronRight,
     Sparkles,
-    AlertCircle
+    AlertCircle,
+    Trash2,
+    History
   } from 'lucide-svelte';
 
   export interface PenjualanItem {
@@ -79,6 +82,14 @@
     created_ms: number;
   }
 
+  export interface PembayaranPiutang {
+    id: number;
+    penjualan_id: number;
+    jumlah_bayar: number;
+    catatan: string | null;
+    created_ms: number;
+  }
+
   let penjualanList = $state<PenjualanItem[]>([]);
   let loading = $state(true);
   let searchQuery = $state('');
@@ -98,6 +109,9 @@
   let selectedPenjualan = $state<PenjualanItem | null>(null);
   let detailItems = $state<PenjualanItemDetail[]>([]);
   let loadingDetail = $state(false);
+  let detailPayments = $state<PembayaranPiutang[]>([]);
+  let loadingPayments = $state(false);
+  let deletingPaymentId = $state<number | null>(null);
 
   // Thermal print state
   let isPrinting = $state(false);
@@ -153,10 +167,24 @@
     }
   }
 
+  async function loadDetailPayments(penjualanId: number) {
+    loadingPayments = true;
+    try {
+      const res = await api.get(`/api/pembayaran_piutang?penjualan_id=${penjualanId}`);
+      const list = typeof res === 'string' ? JSON.parse(res) : res;
+      detailPayments = Array.isArray(list) ? list : [];
+    } catch {
+      detailPayments = [];
+    } finally {
+      loadingPayments = false;
+    }
+  }
+
   async function loadDetailData(item: PenjualanItem) {
     selectedPenjualan = item;
     loadingDetail = true;
     detailItems = [];
+    detailPayments = [];
     try {
       const res = await api.get(`/api/penjualan_item?penjualan_id=${item.id}`);
       const items = typeof res === 'string' ? JSON.parse(res) : (Array.isArray(res) ? res : []);
@@ -166,11 +194,82 @@
     } finally {
       loadingDetail = false;
     }
+    await loadDetailPayments(item.id);
   }
 
   async function openDetail(item: PenjualanItem) {
     isDetailModalOpen = true;
     await loadDetailData(item);
+  }
+
+  async function handleDeletePayment(payment: PembayaranPiutang) {
+    if (!selectedPenjualan) return;
+    const confirmed = await confirmDialog.show({
+      title: 'Hapus Pembayaran Piutang?',
+      message: `Apakah Anda yakin ingin menghapus pembayaran sebesar ${formatRupiah(payment.jumlah_bayar)}? Sisa piutang pelanggan akan bertambah kembali.`,
+      confirmLabel: 'Ya, Hapus',
+      cancelLabel: 'Batal',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    deletingPaymentId = payment.id;
+    try {
+      const res = await api.delete<any>('/pembayaran_piutang', {
+        id: payment.id,
+        penjualan_id: selectedPenjualan.id,
+      });
+      toast.success('Pembayaran piutang berhasil dihapus.');
+      const newSisa = Number(res?.sisa_piutang);
+      if (selectedPenjualan && !Number.isNaN(newSisa)) {
+        const saleId = selectedPenjualan.id;
+        selectedPenjualan = { ...selectedPenjualan, sisa_piutang: newSisa };
+        penjualanList = penjualanList.map((p) => (p.id === saleId ? { ...p, sisa_piutang: newSisa } : p));
+      }
+      if (selectedPenjualan) await loadDetailPayments(selectedPenjualan.id);
+      await fetchData();
+    } catch (err: any) {
+      toast.error('Gagal menghapus pembayaran: ' + (err.message || ''));
+    } finally {
+      deletingPaymentId = null;
+    }
+  }
+
+  async function handleDeletePenjualan(item: PenjualanItem) {
+    const confirmed = await confirmDialog.show({
+      title: 'Hapus Transaksi Penjualan?',
+      message: `Apakah Anda yakin ingin menghapus transaksi "${item.no_struk}" senilai ${formatRupiah(item.total_harga_jual)}? Stok barang akan dikembalikan dan catatan pembukuan terkait ikut terhapus. Tindakan ini tidak dapat dibatalkan.`,
+      confirmLabel: 'Hapus Transaksi',
+      cancelLabel: 'Batal',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      const res = await api.delete('/penjualan', new URLSearchParams({ id: String(item.id) }));
+      if (res === '1') {
+        toast.error('Transaksi ini memiliki riwayat pembayaran piutang. Hapus dulu pembayaran pada bagian "Riwayat Pembayaran Piutang" di rincian transaksi ini.');
+        if (!isDetailModalOpen || selectedPenjualan?.id !== item.id) {
+          await openDetail(item);
+        }
+        return;
+      }
+      toast.success(`Transaksi "${item.no_struk}" berhasil dihapus.`);
+      if (selectedPenjualan?.id === item.id) {
+        isDetailModalOpen = false;
+        selectedPenjualan = null;
+        detailItems = [];
+      }
+      await fetchData();
+    } catch (err: any) {
+      if (err.status === 403) {
+        toast.error('Hanya Administrator yang dapat menghapus transaksi penjualan.');
+      } else {
+        toast.error('Gagal menghapus transaksi: ' + (err.message || ''));
+      }
+    }
   }
 
   async function handlePrint(item?: PenjualanItem) {
@@ -314,9 +413,16 @@
     auth.fetchPublicInfo();
 
     unsubscribeSSE = sse.subscribe((event) => {
-      // type 2 is TRANSACTION / CHECKOUT event
-      if (event.type === 2) {
+      // type 2 = event data barang, type 4 = event penjualan (tambah/hapus)
+      if (event.type === 2 || event.type === 4) {
         fetchData();
+      }
+      // type 6 = event pembayaran piutang / barang masuk
+      if (event.type === 6 && event.code?.includes('PEMBAYARAN_PIUTANG')) {
+        fetchData();
+        if (isDetailModalOpen && selectedPenjualan && Number(event.data?.penjualan_id) === selectedPenjualan.id) {
+          loadDetailPayments(selectedPenjualan.id);
+        }
       }
       if (event?.code === 'UPDATE_STRUK_SETTING') {
         if (event?.data?.enabled !== undefined) {
@@ -636,6 +742,16 @@
                     >
                       <Printer class="w-3.5 h-3.5" />
                     </button>
+                    {#if auth.can(Permissions.ADMINISTRATOR)}
+                      <button
+                        type="button"
+                        onclick={() => handleDeletePenjualan(item)}
+                        title="Hapus Transaksi (khusus Administrator)"
+                        class="p-1.5 rounded-md border border-red-200 dark:border-red-900/60 bg-white dark:bg-neutral-800 text-red-500 dark:text-red-400 hover:text-white hover:bg-red-600 dark:hover:bg-red-600 hover:border-red-600 shadow-2xs transition-all flex items-center justify-center"
+                      >
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </button>
+                    {/if}
                   </div>
                 </td>
               </tr>
@@ -752,6 +868,68 @@
         </table>
       </div>
 
+      <!-- Riwayat Pembayaran Piutang -->
+      {#if (selectedPenjualan.metode_bayar === 1 || detailPayments.length > 0) && auth.can(Permissions.ADMINISTRATOR | Permissions.MANAGE_PEMBUKUAN)}
+        <div class="rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+          <div class="px-4 py-3 bg-neutral-50/60 dark:bg-neutral-900/40 border-b border-neutral-200 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-2 font-medium text-neutral-700 dark:text-neutral-300">
+              <History class="w-3.5 h-3.5 text-neutral-400" />
+              <span>Riwayat Pembayaran Piutang</span>
+            </div>
+            <span class="text-neutral-500">
+              Sisa Piutang:
+              <b class="font-bold text-neutral-900 dark:text-neutral-100 tabular-nums">{formatRupiah(selectedPenjualan.sisa_piutang || 0)}</b>
+            </span>
+          </div>
+          {#if loadingPayments}
+            <div class="p-4 space-y-2">
+              {#each Array(2) as _}
+                <Skeleton class="h-8 w-full" />
+              {/each}
+            </div>
+          {:else if detailPayments.length === 0}
+            <div class="py-6 text-center text-neutral-400 text-xs">
+              Belum ada pembayaran piutang yang tercatat untuk transaksi ini.
+            </div>
+          {:else}
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-neutral-50/40 dark:bg-neutral-900/30 text-neutral-500 text-[11px]">
+                <tr class="border-b border-neutral-200 dark:border-neutral-800">
+                  <th class="px-4 py-2.5 font-medium">WAKTU</th>
+                  <th class="px-4 py-2.5 font-medium">CATATAN</th>
+                  <th class="px-4 py-2.5 font-medium text-right">NOMINAL</th>
+                  <th class="px-4 py-2.5 font-medium text-center w-16">AKSI</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-neutral-200/70 dark:divide-neutral-800/80">
+                {#each detailPayments as payment (payment.id)}
+                  <tr class="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/30">
+                    <td class="px-4 py-2.5 text-neutral-600 dark:text-neutral-400 whitespace-nowrap tabular-nums">
+                      {formatDateTime(payment.created_ms)}
+                    </td>
+                    <td class="px-4 py-2.5 text-neutral-700 dark:text-neutral-300">{payment.catatan || '-'}</td>
+                    <td class="px-4 py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums whitespace-nowrap">
+                      +{formatRupiah(payment.jumlah_bayar)}
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <button
+                        type="button"
+                        disabled={deletingPaymentId === payment.id}
+                        title="Hapus Pembayaran"
+                        onclick={() => handleDeletePayment(payment)}
+                        class="p-1.5 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 shadow-2xs transition-all flex items-center justify-center mx-auto disabled:opacity-50"
+                      >
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
+      {/if}
+
       <!-- Financial Recap Box -->
       <div class="p-4 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-[var(--bg-subtle)]/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div class="space-y-1">
@@ -779,6 +957,17 @@
   {/if}
 
   {#snippet footer()}
+    {#if auth.can(Permissions.ADMINISTRATOR)}
+      <Button
+        variant="secondary"
+        size="sm"
+        class="!text-red-600 dark:!text-red-400 !border-red-200 dark:!border-red-900/60 hover:!bg-red-50 dark:hover:!bg-red-950/30 mr-auto"
+        onclick={() => selectedPenjualan && handleDeletePenjualan(selectedPenjualan)}
+      >
+        <Trash2 class="w-4 h-4" />
+        <span>Hapus Transaksi</span>
+      </Button>
+    {/if}
     <Button
       variant="secondary"
       size="sm"
