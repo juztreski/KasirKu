@@ -15,7 +15,7 @@
 
 import { eq } from "drizzle-orm";
 import { global } from "../../global";
-import { check_sql_is_duplicate_error } from "../../utils/utils";
+import { check_image_type, check_sql_is_duplicate_error } from "../../utils/utils";
 
 export default async function(req: Request, token: string) {
     const user_info = await global.user_sessions.get(token);
@@ -41,6 +41,7 @@ export default async function(req: Request, token: string) {
     const harga_modal = Number(user_input.get("harga_modal"));
     const harga_jual = Number(user_input.get("harga_jual"));
     let barcode_barang = <string | null>user_input.get("barcode_barang");
+    const gambar_barang = <string | null>user_input.get("gambar_barang");
 
     if (
         !nama_barang ||
@@ -51,6 +52,15 @@ export default async function(req: Request, token: string) {
     ) return new Response("Bad Request", {status: 400});
 
     if (!barcode_barang || !barcode_barang.length) barcode_barang = null;
+
+    // Validasi gambar (base64) sebelum insert agar tidak menyisakan data parsial
+    let gambar_buffer: Buffer | null = null;
+    let gambar_type: "jpg" | "png" | false = false;
+    if (gambar_barang && gambar_barang !== "null" && gambar_barang.length) {
+        gambar_buffer = Buffer.from(gambar_barang, "base64");
+        gambar_type = check_image_type(gambar_buffer);
+        if (!gambar_type) return new Response("Gambar tidak valid. Hanya format JPG atau PNG yang didukung.", {status: 400});
+    }
 
     const now = Date.now();
     let last_row;
@@ -74,6 +84,16 @@ export default async function(req: Request, token: string) {
 
     if (!last_row) return new Response("Internal Server Error", { status: 500 });
 
+    let gambar_path: string | null = null;
+    if (gambar_buffer && gambar_type) {
+        gambar_path = `/barang_img/${last_row}.${gambar_type}`;
+        await Bun.write(`barang_img/${last_row}.${gambar_type}`, gambar_buffer);
+        await db.update(schema.barang)
+            .set({ gambar_barang: gambar_path })
+            .where(eq(schema.barang.id, last_row))
+        .execute();
+    }
+
     global.sse_clients.broadcast(JSON.stringify({
         type: 2,
         code: "TAMBAH_BARANG",
@@ -85,6 +105,7 @@ export default async function(req: Request, token: string) {
             harga_modal,
             harga_jual,
             barcode_barang,
+            gambar_barang: gambar_path,
             created_ms: now,
             modified_ms: now
         }

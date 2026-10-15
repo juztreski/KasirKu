@@ -12,6 +12,7 @@
 
   // Routes
   import Login from './lib/routes/Login.svelte';
+  import Katalog from './lib/routes/Katalog.svelte';
   import Dashboard from './lib/routes/Dashboard.svelte';
   import Profile from './lib/routes/Profile.svelte';
   import Kasir from './lib/routes/Kasir.svelte';
@@ -39,12 +40,13 @@
           router.navigate(auth.getDefaultAvailablePath(), true);
         }
       } else {
-        if (router.currentPath !== '/login') {
+        // /katalog adalah halaman publik — boleh diakses tanpa login
+        if (router.currentPath !== '/login' && router.currentPath !== '/katalog') {
           router.navigate('/login', true);
         }
       }
     } catch {
-      if (router.currentPath !== '/login') {
+      if (router.currentPath !== '/login' && router.currentPath !== '/katalog') {
         router.navigate('/login', true);
       }
     }
@@ -61,7 +63,7 @@
       untrack(() => {
         if (!isAuth) {
           sse.disconnect();
-          if (currentPath !== '/login') {
+          if (currentPath !== '/login' && currentPath !== '/katalog') {
             router.navigate('/login', true);
           }
         } else if (user && !auth.isPathAllowed(currentPath)) {
@@ -83,7 +85,11 @@
   <ProgressBar />
 
   {#if !auth.isAuthenticated}
-    <Login />
+    {#if router.currentPath === '/katalog'}
+      <Katalog />
+    {:else}
+      <Login />
+    {/if}
   {:else}
     <AppLayout>
       {#if (router.currentPath === '/' || router.currentPath === '/dashboard') && auth.can(Permissions.DASHBOARD)}
@@ -114,6 +120,8 @@
         <Roles />
       {:else if router.currentPath === '/settings' && auth.can(Permissions.ADMINISTRATOR)}
         <Settings />
+      {:else if router.currentPath === '/katalog'}
+        <Katalog />
       {:else if !auth.isPathAllowed(router.currentPath)}
         <div class="py-16 text-center">
           <div class="inline-flex p-3 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 mb-3">

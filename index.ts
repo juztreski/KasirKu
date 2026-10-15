@@ -228,6 +228,7 @@ async function prepare() {
     console.log("[LOG] Preparing Server...");
 
     await mkdir("./profile_img", { recursive: true });
+    await mkdir("./barang_img", { recursive: true });
     const global = (await import("./src/global")).global;
 
     let check_old_db = 0;

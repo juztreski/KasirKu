@@ -141,7 +141,7 @@ export function main() {
 
                 // Normal GET API endpoint
                 const user_info = token ? await global.user_sessions.get(token) : null;
-                if (api_path !== "/public_info" && (!token || !user_info)) {
+                if (api_path !== "/public_info" && api_path !== "/katalog" && (!token || !user_info)) {
                     return with_cors(new Response("Unauthorized", { status: 401 }), req);
                 }
 
@@ -161,6 +161,22 @@ export function main() {
 
             // Profile images
             if (pathname.startsWith("/profile_img/")) {
+                const file = Bun.file(pathname.slice(1));
+                if (!(await file.exists())) {
+                    return with_cors(new Response("Not Found", { status: 404 }), req);
+                }
+                const ext = pathname.split(".").pop() || "";
+                return with_cors(new Response(file.stream(), {
+                    status: 200,
+                    headers: {
+                        "Content-Type": mime_types[ext] || "application/octet-stream",
+                        "Cache-Control": "public, max-age=86400",
+                    }
+                }), req);
+            }
+
+            // Product images
+            if (pathname.startsWith("/barang_img/")) {
                 const file = Bun.file(pathname.slice(1));
                 if (!(await file.exists())) {
                     return with_cors(new Response("Not Found", { status: 404 }), req);

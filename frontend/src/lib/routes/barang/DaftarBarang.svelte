@@ -17,6 +17,7 @@
   import Badge from '../../components/ui/Badge.svelte';
   import Skeleton from '../../components/ui/Skeleton.svelte';
   import TablePagination from '../../components/ui/TablePagination.svelte';
+  import ImagePreviewModal from '../../components/ui/ImagePreviewModal.svelte';
   import { buildCsv, parseCsv, downloadCsv } from '../../utils/csv';
   import {
     formatRupiah,
@@ -48,7 +49,9 @@
     ArrowDown,
     CheckCircle2,
     Download,
-    Upload
+    Upload,
+    Image as ImageIcon,
+    ZoomIn
   } from 'lucide-svelte';
 
   export interface BarangItem {
@@ -59,6 +62,7 @@
     harga_modal: number;
     harga_jual: number;
     barcode_barang: string | null;
+    gambar_barang?: string | null;
     created_ms: number;
     modified_ms: number;
     nama_kategori?: string;
@@ -101,6 +105,8 @@
   let isModalOpen = $state(false);
   let isEditing = $state(false);
   let editingId = $state<number | null>(null);
+  let previewItem = $state<BarangItem | null>(null);
+  let previewOpen = $state(false);
 
   // Form Fields
   let formNama = $state('');
@@ -112,6 +118,13 @@
   let formPersen = $state<string>('20,00');
   let formErrorMessage = $state<string | null>(null);
   let fieldErrors = $state<Record<string, string>>({});
+
+  // Foto Produk
+  let formGambarPreview = $state<string | null>(null); // data URL untuk preview
+  let formGambarBase64 = $state<string | null>(null);  // base64 mentah untuk dikirim
+  let formGambarRemoved = $state(false);               // tandai penghapusan saat edit
+  let isProcessingGambar = $state(false);
+  let gambarInput = $state<HTMLInputElement | undefined>(undefined);
 
   // parseIDR membaca nilai dalam sen (integer)
   const previewModal = $derived(parseIDR(formModal));
@@ -277,6 +290,87 @@
     formBarcode = `899${timestamp}${random}`;
   }
 
+  function resetFormGambar(preview: string | null = null) {
+    formGambarPreview = preview;
+    formGambarBase64 = null;
+    formGambarRemoved = false;
+    isProcessingGambar = false;
+  }
+
+  function triggerGambarPick() {
+    gambarInput?.click();
+  }
+
+  // Resize & kompres di sisi klien agar payload base64 tetap kecil
+  function processImageFile(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const img = new Image();
+        img.onerror = () => reject(new Error('File gambar tidak valid.'));
+        img.onload = () => {
+          const MAX = 800;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            const scale = Math.min(MAX / width, MAX / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return reject(new Error('Gagal memproses gambar.'));
+          // Latar putih agar JPEG tidak menjadi hitam pada area transparan
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          const isPng = file.type === 'image/png';
+          const out = canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', 0.85);
+          resolve(out.split(',')[1] || '');
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleGambarChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      toast.error('Hanya file gambar JPG atau PNG yang didukung.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Ukuran gambar maksimal 5 MB.');
+      return;
+    }
+
+    isProcessingGambar = true;
+    try {
+      const base64 = await processImageFile(file);
+      formGambarBase64 = base64;
+      formGambarPreview = `data:${file.type};base64,${base64}`;
+      formGambarRemoved = false;
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal memproses gambar.');
+    } finally {
+      isProcessingGambar = false;
+    }
+  }
+
+  function handleRemoveGambar() {
+    formGambarPreview = null;
+    formGambarBase64 = null;
+    formGambarRemoved = true;
+  }
+
   function openAddModal() {
     isEditing = false;
     editingId = null;
@@ -292,6 +386,7 @@
     isCreatingKategori = false;
     newKategoriName = '';
     newKategoriError = null;
+    resetFormGambar();
     isModalOpen = true;
   }
 
@@ -319,6 +414,7 @@
     isCreatingKategori = false;
     newKategoriName = '';
     newKategoriError = null;
+    resetFormGambar(item.gambar_barang || null);
     isModalOpen = true;
   }
 
@@ -402,6 +498,13 @@
         harga_jual: String(jualNum),     // nilai dalam sen, kirim ke server
         barcode_barang: formBarcode.trim() || '',
       });
+
+      // gambar_barang: base64 baru = ganti foto, "null" = hapus foto, tidak dikirim = tanpa perubahan
+      if (formGambarBase64) {
+        body.set('gambar_barang', formGambarBase64);
+      } else if (formGambarRemoved) {
+        body.set('gambar_barang', 'null');
+      }
 
       if (isEditing && editingId) {
         body.set('id', String(editingId));
@@ -1044,8 +1147,28 @@
 
                 <!-- Nama Produk -->
                 <td class="py-2.5 px-4">
-                  <div class="font-medium text-[var(--text-primary)] text-xs sm:text-sm">
-                    {item.nama_barang}
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 shrink-0 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] overflow-hidden flex items-center justify-center">
+                      {#if item.gambar_barang}
+                        <button
+                          type="button"
+                          onclick={() => { previewItem = item; previewOpen = true; }}
+                          title="Perbesar foto {item.nama_barang}"
+                          aria-label="Perbesar foto {item.nama_barang}"
+                          class="w-full h-full relative group/photo cursor-zoom-in"
+                        >
+                          <img src={item.gambar_barang} alt={item.nama_barang} class="w-full h-full object-cover group-hover/photo:scale-110 transition-transform duration-200" loading="lazy" />
+                          <span class="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover/photo:opacity-100 transition-opacity">
+                            <ZoomIn class="w-3.5 h-3.5" />
+                          </span>
+                        </button>
+                      {:else}
+                        <ImageIcon class="w-4 h-4 text-neutral-300 dark:text-neutral-600" />
+                      {/if}
+                    </div>
+                    <div class="font-medium text-[var(--text-primary)] text-xs sm:text-sm">
+                      {item.nama_barang}
+                    </div>
                   </div>
                 </td>
 
@@ -1335,6 +1458,54 @@
       </div>
     </div>
 
+    <!-- Foto Produk -->
+    <div class="p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/50 flex items-center gap-4">
+      <div class="w-20 h-20 shrink-0 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 overflow-hidden flex items-center justify-center">
+        {#if formGambarPreview}
+          <img src={formGambarPreview} alt="Foto produk" class="w-full h-full object-cover" />
+        {:else}
+          <ImageIcon class="w-7 h-7 text-neutral-300 dark:text-neutral-600" />
+        {/if}
+      </div>
+      <div class="min-w-0 space-y-1.5">
+        <div class="text-xs font-medium text-neutral-700 dark:text-neutral-300">Foto Produk</div>
+        <p class="text-[11px] text-neutral-500 leading-relaxed">
+          Format JPG/PNG, maksimal 5 MB. Gambar otomatis dikecilkan agar loading cepat.
+        </p>
+        <div class="flex items-center gap-1.5">
+          <input
+            bind:this={gambarInput}
+            type="file"
+            accept="image/jpeg,image/png"
+            class="hidden"
+            onchange={handleGambarChange}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onclick={triggerGambarPick}
+            loading={isProcessingGambar}
+          >
+            <Upload class="w-3.5 h-3.5" />
+            <span>{formGambarPreview ? 'Ganti Foto' : 'Unggah Foto'}</span>
+          </Button>
+          {#if formGambarPreview}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onclick={handleRemoveGambar}
+              class="!text-red-500 dark:!text-red-400"
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              <span>Hapus</span>
+            </Button>
+          {/if}
+        </div>
+      </div>
+    </div>
+
     <!-- Live Margin Preview Card -->
 
     <div class="p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/50 flex items-center justify-between text-xs">
@@ -1373,3 +1544,12 @@
     </div>
   </form>
 </Modal>
+
+<!-- Preview foto produk (zoom) -->
+<ImagePreviewModal
+  bind:open={previewOpen}
+  src={previewItem?.gambar_barang ?? null}
+  name={previewItem?.nama_barang ?? ''}
+  price={previewItem ? formatRupiah(previewItem.harga_jual) : ''}
+  onclose={() => (previewItem = null)}
+/>

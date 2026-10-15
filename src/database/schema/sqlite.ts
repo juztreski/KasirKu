@@ -107,6 +107,8 @@ export const barang = sqliteTable("barang", {
     barcode_barang:
         text("barcode_barang")
         .unique(),
+    gambar_barang:
+        text("gambar_barang"),
     created_ms:
         integer("created_ms")
         .notNull(),

@@ -15,3 +15,5 @@ database/*.db
 config.json
 .env
 cloudflared.env
+barang_img/
+barang_img/**

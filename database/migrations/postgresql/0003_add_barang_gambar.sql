@@ -1,0 +1,1 @@
+ALTER TABLE "barang" ADD COLUMN "gambar_barang" text;

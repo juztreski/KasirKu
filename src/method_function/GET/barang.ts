@@ -44,6 +44,7 @@ export default async function(req: Request, url: URL, user_info: user_session_in
             harga_modal: barang.harga_modal,
             harga_jual: barang.harga_jual,
             barcode_barang: barang.barcode_barang,
+            gambar_barang: barang.gambar_barang,
             created_ms: barang.created_ms,
             modified_ms: barang.modified_ms,
             nama_kategori: kategori_barang.nama_kategori

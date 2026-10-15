@@ -14,8 +14,9 @@
 */
 
 import { eq } from "drizzle-orm";
+import { unlink } from "node:fs/promises";
 import { global } from "../../global";
-import { check_sql_is_duplicate_error } from "../../utils/utils";
+import { check_image_type, check_sql_is_duplicate_error } from "../../utils/utils";
 
 export default async function(req: Request, token: string) {
     const user_info = await global.user_sessions.get(token);
@@ -54,11 +55,28 @@ export default async function(req: Request, token: string) {
 
     if (!barcode_barang || !barcode_barang.length) barcode_barang = null;
 
+    // gambar_barang: tidak dikirim = tanpa perubahan, "null" = hapus gambar, base64 = ganti gambar
+    const gambar_input = user_input.get("gambar_barang");
+
+    let gambar_buffer: Buffer | null = null;
+    let gambar_type: "jpg" | "png" | false = false;
+    if (gambar_input && gambar_input !== "null" && gambar_input.length) {
+        gambar_buffer = Buffer.from(gambar_input, "base64");
+        gambar_type = check_image_type(gambar_buffer);
+        if (!gambar_type) return new Response("Gambar tidak valid. Hanya format JPG atau PNG yang didukung.", {status: 400});
+    }
+
+    const [existing_barang] = await db
+        .select({gambar_barang: barang.gambar_barang})
+        .from(barang)
+        .where(eq(barang.id, id))
+    .limit(1);
+
+    if (!existing_barang) return new Response("Not Found", {status: 404});
+
     const now = Date.now();
     try {
-        await db
-        .update(barang)
-        .set({
+        const update_data: any = {
             nama_barang,
             stok_barang,
             kategori_barang_id,
@@ -66,9 +84,34 @@ export default async function(req: Request, token: string) {
             harga_jual,
             barcode_barang,
             modified_ms: now
-        })
+        };
+
+        let gambar_path: string | null = null;
+        let remove_gambar_file: string | null = null;
+
+        if (gambar_input === "null") {
+            update_data.gambar_barang = null;
+            remove_gambar_file = existing_barang.gambar_barang;
+        } else if (gambar_buffer && gambar_type) {
+            gambar_path = `/barang_img/${id}.${gambar_type}`;
+            update_data.gambar_barang = gambar_path;
+            remove_gambar_file = existing_barang.gambar_barang;
+        }
+
+        await db
+        .update(barang)
+        .set(update_data)
         .where(eq(barang.id, id))
         .execute();
+
+        if (gambar_buffer && gambar_type) {
+            await Bun.write(`barang_img/${id}.${gambar_type}`, gambar_buffer);
+        }
+
+        // Bersihkan file gambar lama (path lama ≠ path baru)
+        if (remove_gambar_file && remove_gambar_file !== gambar_path) {
+            try { await unlink(remove_gambar_file.slice(1)); } catch {}
+        }
     } catch(e) {
         if (check_sql_is_duplicate_error(e)) return new Response("1", {status: 403});
         console.log("An error occured in PATCH Method at /barang:", e)

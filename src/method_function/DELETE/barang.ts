@@ -14,6 +14,7 @@
 */
 
 import { eq, sql } from "drizzle-orm";
+import { unlink } from "node:fs/promises";
 import { global } from "../../global";
 
 export default async function(req: Request, token: string) {
@@ -43,7 +44,7 @@ export default async function(req: Request, token: string) {
     ) return new Response("Bad Request", {status: 400});
     
     const [res] = await db
-        .select({kategori_barang_id: schema.barang.kategori_barang_id})
+        .select({kategori_barang_id: schema.barang.kategori_barang_id, gambar_barang: schema.barang.gambar_barang})
         .from(schema.barang)
         .where(eq(schema.barang.id, id))
     .limit(1);
@@ -90,6 +91,10 @@ export default async function(req: Request, token: string) {
                 eq(schema.retur_barang.barang_id, id)
             )
         .execute();
+
+        if (res.gambar_barang) {
+            try { await unlink(res.gambar_barang.slice(1)); } catch {}
+        }
     } catch (e) {
         console.log("An error occured in DELETE Method at /barang:", e);
         return new Response("Internal Server Error", { status: 500 });
